@@ -52,8 +52,12 @@ def extract_metadata(chunks):
 
         elif chunk.type == "zTXt":
             print("zTXt metadata: " + str(parse_zTXt(chunk)))
+        
+        elif chunk.type == "IDAT":
+            print("IDAT metadata: "+ str(parse_IDAT(chunk)))
 
-
+        elif chunk.type == "PLTE":
+            print("PLTE metadata: " + str(parse_PLTE(chunk)))
 
 def parse_IHDR(chunk):
     if(chunk.type != "IHDR"):
@@ -157,3 +161,9 @@ def parse_pHYs(chunk):
         "pixels_per_unit_Y": pixels_per_unit_Y,
         "unit_sepecifier": unit
     }
+
+def parse_IDAT(chunk):
+    pass
+
+def parse_PLTE(chunk):
+    pass
