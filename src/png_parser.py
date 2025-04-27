@@ -1,6 +1,7 @@
 from chunks import PngChunk
 import struct
 import zlib
+import piexif
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
@@ -33,6 +34,7 @@ def read_chunks(file_path):
 def extract_metadata(chunks):
     for chunk in chunks:
         if chunk.type == "IHDR":
+            ihdr_data = parse_IHDR(chunk)
             print("IHDR metadata: " + str(parse_IHDR(chunk)))
 
         elif chunk.type == "tEXt":
@@ -57,7 +59,8 @@ def extract_metadata(chunks):
             print("IDAT metadata: "+ str(parse_IDAT(chunk)))
 
         elif chunk.type == "PLTE":
-            print("PLTE metadata: " + str(parse_PLTE(chunk)))
+            color_type = ihdr_data["color_type"]
+            print("PLTE metadata: " + str(parse_PLTE(chunk, color_type)))
 
 def parse_IHDR(chunk):
     if(chunk.type != "IHDR"):
@@ -127,10 +130,29 @@ def parse_tIME(chunk):
         "minute": minute,
         "second": second
     }
-    
+
 def parse_eXIf(chunk):
-    if(chunk.type != "eXIf"):
+    if chunk.type != "eXIf":
         raise ValueError("Chunk is not type of eXIf")
+
+    data = chunk.data
+    # Parse EXIF using piexif
+    try:
+        exif_dict = piexif.load(data)
+        readable_exif = {}
+
+        for ifd in exif_dict:
+            if isinstance(exif_dict[ifd], dict):
+                for tag in exif_dict[ifd]:
+                    tag_name = piexif.TAGS[ifd][tag]["name"]
+                    readable_exif[tag_name] = exif_dict[ifd][tag]
+
+        return readable_exif
+
+    except Exception as e:
+        print(f"Error parsing EXIF: {e}")
+        return None
+
 
 def parse_zTXt(chunk):
     if(chunk.type != "zTXt"):
@@ -163,7 +185,28 @@ def parse_pHYs(chunk):
     }
 
 def parse_IDAT(chunk):
-    pass
+    if chunk.type != "IDAT":
+        raise ValueError("Chunk is not type of IDAT")
 
-def parse_PLTE(chunk):
-    pass
+def parse_PLTE(chunk, color_type):
+    if chunk.type != "PLTE":
+        raise ValueError("Chunk is not type of PLTE")
+
+    if color_type == 0 or color_type == 4:
+        raise ValueError("PLTE chunk must not appeare for this image")
+
+    data = chunk.data
+    if len(data) % 3 != 0:
+        raise ValueError("PLTE chunk length is not divisible by 3.")
+
+    palette = []
+    for i in range(0, len(data), 3):
+        r = data[i]
+        g = data[i+1]
+        b = data[i+2]
+        palette.append((r, g, b))
+
+    return {
+        "colors_count": len(palette),
+        "colors": palette
+    }
