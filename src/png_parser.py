@@ -3,6 +3,8 @@ import struct
 import zlib
 import piexif
 import numpy as np
+from collections import Counter
+
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
@@ -72,7 +74,7 @@ def extract_metadata(chunks):
         bit_depth = ihdr_data["bit_depth"]
         color_type = ihdr_data["color_type"]
         idat_data = parse_IDAT(idat_data, width, height, bit_depth, color_type)
-        print("IDAT metadata (numpy array shape): " + str(idat_data.shape))
+        print("IDAT metadata: " + str(idat_data))
 
 def parse_IHDR(chunk):
     if(chunk.type != "IHDR"):
@@ -162,7 +164,6 @@ def parse_eXIf(chunk):
     except Exception as e:
         print(f"Error parsing EXIF: {e}")
         return None
-
 
 def parse_zTXt(chunk):
     if(chunk.type != "zTXt"):
@@ -256,55 +257,123 @@ def undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel):
         raise ValueError(f"Unknown filter type {filter_type}")
     return result
 
-def parse_IDAT(idat_data, width, height, bit_depth, color_type):
-    # Zdekompresuj IDAT
-    decompressed = zlib.decompress(idat_data)
+def get_dominant_colors(arr, color_type, top_n=5):
+    if color_type == 3:
+        flat = arr.flatten()
+        return {f"Palette index {k}": v for k, v in Counter(flat).most_common(top_n)}
+    elif color_type in (2, 6):
+        pixels = arr.reshape(-1, arr.shape[-1])[:, :3]
+        pixels = [(int(p[0]), int(p[1]), int(p[2])) for p in pixels]
+        color_counts = Counter(pixels)
+        return {f"RGB{color}": count for color, count in color_counts.most_common(top_n)}
+    return None
 
-    # Ustalenie ilości bajtów na piksel
+def get_compression_info(idat_data):
+    original_size = len(idat_data)
+    decompressed = zlib.decompress(idat_data)
+    ratio = original_size / len(decompressed)
+    return {
+        "compressed_size": original_size,
+        "uncompressed_size": len(decompressed),
+        "compression_ratio": round(ratio, 2)
+    }
+
+def has_transparency(arr, color_type):
+    if color_type not in (4, 6):
+        return False
+    alpha_channel = arr[..., -1] if color_type == 6 else arr[..., 1]
+    if np.any(alpha_channel < 255):
+        return True
+    return False
+
+def get_image_stats(arr, color_type):
+    stats = {
+        "min_value": float(np.min(arr)),
+        "max_value": float(np.max(arr)),
+        "mean_value": float(np.mean(arr)),
+        "std_dev": float(np.std(arr)),
+        "unique_values": len(np.unique(arr)) if color_type == 3 else None
+    }
+    
+    if color_type in (2, 6):  # RGB/RGBA
+        stats["channel_stats"] = {
+            "R": {"min": float(np.min(arr[..., 0])), "max": float(np.max(arr[..., 0]))},
+            "G": {"min": float(np.min(arr[..., 1])), "max": float(np.max(arr[..., 1]))},
+            "B": {"min": float(np.min(arr[..., 2])), "max": float(np.max(arr[..., 2]))}
+        }
+        if color_type == 6:  # RGBA
+            stats["channel_stats"]["A"] = {
+                "min": float(np.min(arr[..., 3])),
+                "max": float(np.max(arr[..., 3]))
+            }
+    
+    return stats
+
+def parse_IDAT(idat_data, width, height, bit_depth, color_type):
+    try:
+        decompressed = zlib.decompress(idat_data)
+    except zlib.error as e:
+        raise ValueError(f"Decompression failed: {e}")
+
     if color_type == 0:  # Grayscale
-        samples_per_pixel = 1
-    elif color_type == 2:  # Truecolor (RGB)
-        samples_per_pixel = 3
-    elif color_type == 3:  # Indexed-color
-        samples_per_pixel = 1
-    elif color_type == 4:  # Grayscale with alpha
-        samples_per_pixel = 2
-    elif color_type == 6:  # Truecolor with alpha (RGBA)
-        samples_per_pixel = 4
+        channels = 1
+    elif color_type == 2:  # RGB
+        channels = 3
+    elif color_type == 3:  # Indexed
+        channels = 1
+    elif color_type == 4:  # Grayscale + Alpha
+        channels = 2
+    elif color_type == 6:  # RGBA
+        channels = 4
     else:
         raise ValueError(f"Unsupported color type: {color_type}")
 
-    # Bits per pixel
-    bits_per_pixel = samples_per_pixel * bit_depth
-    bytes_per_pixel = (bits_per_pixel + 7) // 8
+    bits_per_scanline = width * channels * bit_depth
+    bytes_per_scanline = (bits_per_scanline + 7) // 8
 
-    scanline_length = (width * bits_per_pixel + 7) // 8
-
-    # Przetwarzanie skanlinii
     pixels = []
-    idx = 0
     prev_scanline = None
+    offset = 0
+    
     for _ in range(height):
-        filter_type = decompressed[idx]
-        idx += 1
-        scanline = decompressed[idx:idx + scanline_length]
-        idx += scanline_length
+        if offset + 1 + bytes_per_scanline > len(decompressed):
+            raise ValueError("Unexpected end of IDAT data")
 
-        unfiltered = undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel)
+        filter_type = decompressed[offset]
+        offset += 1
+        
+        scanline = decompressed[offset:offset + bytes_per_scanline]
+        offset += bytes_per_scanline
+
+        unfiltered = undo_filter(filter_type, scanline, prev_scanline, (channels * bit_depth + 7) // 8)
         pixels.append(unfiltered)
         prev_scanline = unfiltered
 
-    # Łączenie skanlinii w jedno pole
-    pixel_bytes = b''.join(pixels)
+    pixel_data = b''.join(pixels)
 
-    # Przekształcenie na numpy array
-    array = np.frombuffer(pixel_bytes, dtype=np.uint8)
+    if bit_depth == 8:
+        dtype = np.uint8
+    elif bit_depth == 16:
+        dtype = '>u2'
+    else:
+        raise ValueError(f"Unsupported bit depth: {bit_depth}")
 
-    if color_type in (2, 6):  # RGB or RGBA
-        array = array.reshape((width, height, samples_per_pixel))
-    elif color_type in (0, 4):  # Grayscale or Grayscale+Alpha
-        array = array.reshape((width, height, samples_per_pixel))
-    elif color_type == 3:  # Indexed color
-        array = array.reshape((width, height))  # indeksy do palety
+    arr = np.frombuffer(pixel_data, dtype=dtype)
 
-    return array
+    if color_type in (2, 6):  # RGB/RGBA
+        arr = arr.reshape((height, width, channels))
+    elif color_type in (0, 3, 4):  # Grayscale/Indexed/Grayscale+Alpha
+        if channels > 1:
+            arr = arr.reshape((height, width, channels))
+        else:
+            arr = arr.reshape((height, width))
+
+    metadata = {
+        "stats": get_image_stats(arr, color_type),
+        "dominant_colors": get_dominant_colors(arr, color_type),
+        "compression": get_compression_info(idat_data),
+        "raw_shape": f"{height}x{width}x{channels}",
+        "has_transparency": has_transparency(arr, color_type)
+    }
+
+    return metadata

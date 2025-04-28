@@ -4,7 +4,7 @@ import os
 #from png_anonymizator import anonymize_png
 
 if __name__ == "__main__":
-    file_path = os.path.join("assets", "flower.png")
+    file_path = os.path.join("assets", "game.png")
 
     chunks = png_parser.read_chunks(file_path)
 
