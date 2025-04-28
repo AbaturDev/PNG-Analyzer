@@ -2,6 +2,7 @@ from chunks import PngChunk
 import struct
 import zlib
 import piexif
+import numpy as np
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
@@ -32,6 +33,9 @@ def read_chunks(file_path):
     return chunks
 
 def extract_metadata(chunks):
+    ihdr_data = None
+    idat_data = b""
+
     for chunk in chunks:
         if chunk.type == "IHDR":
             ihdr_data = parse_IHDR(chunk)
@@ -56,11 +60,19 @@ def extract_metadata(chunks):
             print("zTXt metadata: " + str(parse_zTXt(chunk)))
         
         elif chunk.type == "IDAT":
-            print("IDAT metadata: "+ str(parse_IDAT(chunk)))
+            idat_data += chunk.data
 
         elif chunk.type == "PLTE":
             color_type = ihdr_data["color_type"]
             print("PLTE metadata: " + str(parse_PLTE(chunk, color_type)))
+    
+    if idat_data and ihdr_data:
+        width = ihdr_data["width"]
+        height = ihdr_data["height"]
+        bit_depth = ihdr_data["bit_depth"]
+        color_type = ihdr_data["color_type"]
+        idat_data = parse_IDAT(idat_data, width, height, bit_depth, color_type)
+        print("IDAT metadata (numpy array shape): " + str(idat_data.shape))
 
 def parse_IHDR(chunk):
     if(chunk.type != "IHDR"):
@@ -182,10 +194,6 @@ def parse_pHYs(chunk):
         "unit_sepecifier": unit
     }
 
-def parse_IDAT(chunk):
-    if chunk.type != "IDAT":
-        raise ValueError("Chunk is not type of IDAT")
-
 def parse_PLTE(chunk, color_type):
     if chunk.type != "PLTE":
         raise ValueError("Chunk is not type of PLTE")
@@ -208,3 +216,95 @@ def parse_PLTE(chunk, color_type):
         "colors_count": len(palette),
         "colors": palette
     }
+
+def paeth_predictor(a, b, c):
+    p = a + b - c
+    pa = abs(p - a)
+    pb = abs(p - b)
+    pc = abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    elif pb <= pc:
+        return b
+    else:
+        return c
+
+def undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel):
+    result = bytearray(len(scanline))
+    if filter_type == 0:  # None
+        return scanline
+    elif filter_type == 1:  # Sub
+        for i in range(len(scanline)):
+            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            result[i] = (scanline[i] + left) & 0xFF
+    elif filter_type == 2:  # Up
+        for i in range(len(scanline)):
+            up = prev_scanline[i] if prev_scanline else 0
+            result[i] = (scanline[i] + up) & 0xFF
+    elif filter_type == 3:  # Average
+        for i in range(len(scanline)):
+            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            up = prev_scanline[i] if prev_scanline else 0
+            result[i] = (scanline[i] + ((left + up) // 2)) & 0xFF
+    elif filter_type == 4:  # Paeth
+        for i in range(len(scanline)):
+            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            up = prev_scanline[i] if prev_scanline else 0
+            up_left = prev_scanline[i - bytes_per_pixel] if (prev_scanline and i >= bytes_per_pixel) else 0
+            result[i] = (scanline[i] + paeth_predictor(left, up, up_left)) & 0xFF
+    else:
+        raise ValueError(f"Unknown filter type {filter_type}")
+    return result
+
+def parse_IDAT(idat_data, width, height, bit_depth, color_type):
+    # Zdekompresuj IDAT
+    decompressed = zlib.decompress(idat_data)
+
+    # Ustalenie ilości bajtów na piksel
+    if color_type == 0:  # Grayscale
+        samples_per_pixel = 1
+    elif color_type == 2:  # Truecolor (RGB)
+        samples_per_pixel = 3
+    elif color_type == 3:  # Indexed-color
+        samples_per_pixel = 1
+    elif color_type == 4:  # Grayscale with alpha
+        samples_per_pixel = 2
+    elif color_type == 6:  # Truecolor with alpha (RGBA)
+        samples_per_pixel = 4
+    else:
+        raise ValueError(f"Unsupported color type: {color_type}")
+
+    # Bits per pixel
+    bits_per_pixel = samples_per_pixel * bit_depth
+    bytes_per_pixel = (bits_per_pixel + 7) // 8
+
+    scanline_length = (width * bits_per_pixel + 7) // 8
+
+    # Przetwarzanie skanlinii
+    pixels = []
+    idx = 0
+    prev_scanline = None
+    for _ in range(height):
+        filter_type = decompressed[idx]
+        idx += 1
+        scanline = decompressed[idx:idx + scanline_length]
+        idx += scanline_length
+
+        unfiltered = undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel)
+        pixels.append(unfiltered)
+        prev_scanline = unfiltered
+
+    # Łączenie skanlinii w jedno pole
+    pixel_bytes = b''.join(pixels)
+
+    # Przekształcenie na numpy array
+    array = np.frombuffer(pixel_bytes, dtype=np.uint8)
+
+    if color_type in (2, 6):  # RGB or RGBA
+        array = array.reshape((width, height, samples_per_pixel))
+    elif color_type in (0, 4):  # Grayscale or Grayscale+Alpha
+        array = array.reshape((width, height, samples_per_pixel))
+    elif color_type == 3:  # Indexed color
+        array = array.reshape((width, height))  # indeksy do palety
+
+    return array

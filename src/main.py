@@ -1,6 +1,6 @@
 import png_parser
 import os
-import fourier
+#import fourier
 #from png_anonymizator import anonymize_png
 
 if __name__ == "__main__":
