@@ -134,11 +134,9 @@ def parse_tIME(chunk):
 def parse_eXIf(chunk):
     if chunk.type != "eXIf":
         raise ValueError("Chunk is not type of eXIf")
-
-    data = chunk.data
-    # Parse EXIF using piexif
+    
     try:
-        exif_dict = piexif.load(data)
+        exif_dict = piexif.load(chunk.data)
         readable_exif = {}
 
         for ifd in exif_dict:
