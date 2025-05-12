@@ -377,3 +377,13 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
     }
 
     return metadata
+
+def write_chunks(filename, chunks):
+    with open(filename, "wb") as f:
+        f.write(PNG_SIGNATURE)
+
+        for chunk in chunks:
+            f.write(chunk.length.to_bytes(4, "big"))
+            f.write(chunk.type.encode("ascii"))
+            f.write(chunk.data)
+            f.write(chunk.crc.to_bytes(4, "big"))
