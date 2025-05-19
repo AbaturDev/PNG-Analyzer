@@ -39,3 +39,15 @@ def generate_keypair(bits: int = 512):
 
     d = modinv(e, phi)
     return (e, n), (d, n)
+
+def rsa_encrypt(message: bytes, public_key: tuple) -> bytes:
+    e, n = public_key
+    m = int.from_bytes(message, 'big')
+    c = pow(m, e, n)
+    return c.to_bytes((c.bit_length() + 7) // 8, 'big')
+
+def rsa_decrypt(ciphertext: bytes, private_key: tuple) -> bytes:
+    d, n = private_key
+    c = int.from_bytes(ciphertext, 'big')
+    m = pow(c, d, n)
+    return m.to_bytes((m.bit_length() + 7) // 8, 'big')

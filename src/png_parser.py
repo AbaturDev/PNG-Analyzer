@@ -41,7 +41,7 @@ def extract_metadata(chunks):
     for chunk in chunks:
         if chunk.type == "IHDR":
             ihdr_data = parse_IHDR(chunk)
-            print("IHDR metadata: " + str(parse_IHDR(chunk)))
+            print("IHDR metadata: " + str(ihdr_data))
 
         elif chunk.type == "tEXt":
             print("tEXt metadata: " + str(parse_tEXt(chunk)))

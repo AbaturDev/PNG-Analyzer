@@ -1,12 +1,16 @@
 import png_parser
 import os
+from chunks import PngChunk
 #import fourier
 #from png_anonymizator import anonymize_png
 from rsa import generate_keypair
 import modes_ebc as ebc
 
+
 if __name__ == "__main__":
-    file_path = os.path.join("assets", "game.png")
+    filename = "sand"
+    file_path = os.path.join("assets", f"{filename}.png")
+    #output_path = os.path.join("assets", f"{filename}_encrypted.png")
 
     chunks = png_parser.read_chunks(file_path)
 
@@ -27,53 +31,14 @@ if __name__ == "__main__":
 
     # png_parser.extract_metadata(chunks_anonymized)
 
-    public_key, private_key = generate_keypair(512)
+    input_png_file = "assets/sand.png"
+    encrypted_png_file = "assets/sand_encrypted.png"
+    decrypted_png_file = "assets/sand_decrypted.png"
 
-    idat_data = b"".join(chunk.data for chunk in chunks if chunk.type == b'IDAT')
+    public_key, private_key = generate_keypair(bits=512)
 
-    encrypted_idat = ebc.encrypt_ecb(idat_data, public_key)
+    ebc.encrypt_png_ebc(input_png_file, encrypted_png_file, public_key, chunk_types_to_encrypt=["IDAT"])
+    print(f"Encrypted PNG: {encrypted_png_file}")
 
-    # 4. Zamień dane IDAT w oryginalnych chunkach na zaszyfrowane
-    encrypted_chunks = []
-    encrypted_offset = 0
-    for chunk in chunks:
-        if chunk.type == b'IDAT':
-            length = len(chunk.data)
-            new_data = encrypted_idat[encrypted_offset:encrypted_offset+length]
-            encrypted_chunks.append({
-                'length': length,
-                'type': chunk.type,
-                'data': new_data
-            })
-            encrypted_offset += length
-        else:
-            encrypted_chunks.append(chunk)
-
-    # 5. Zapisz nowy plik PNG z zaszyfrowaną masą bitową
-    encrypted_path = os.path.join("assets", "game_encrypted.png")
-    png_parser.write_chunks(encrypted_path, encrypted_chunks)
-    print("\n📁 Zaszyfrowany plik zapisano jako:", encrypted_path)
-
-    # 6. (opcjonalnie) odszyfruj z powrotem i sprawdź poprawność
-    chunks_enc = png_parser.read_chunks(encrypted_path)
-    idat_enc = b"".join(chunk.data for chunk in chunks_enc if chunk.type == b'IDAT')
-    decrypted_idat = ebc.decrypt_ecb(idat_enc, private_key)
-
-    decrypted_chunks = []
-    decrypted_offset = 0
-    for chunk in chunks_enc:
-        if chunk.type == b'IDAT':
-            length = len(chunk.data)
-            new_data = decrypted_idat[decrypted_offset:decrypted_offset+length]
-            decrypted_chunks.append({
-                'length': length,
-                'type': chunk.type,
-                'data': new_data
-            })
-            decrypted_offset += length
-        else:
-            decrypted_chunks.append(chunk)
-
-    decrypted_path = os.path.join("assets", "game_decrypted.png")
-    png_parser.write_chunks(decrypted_path, decrypted_chunks)
-    print("🔓 Odszyfrowany plik zapisano jako:", decrypted_path)
+    ebc.decrypt_png_ebc(encrypted_png_file, decrypted_png_file, private_key, chunk_types_to_decrypt=["IDAT"])
+    print(f"Decrypted PNG: {decrypted_png_file}")
