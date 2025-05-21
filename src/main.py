@@ -25,7 +25,7 @@ if __name__ == "__main__":
     for chunk in chunks:
        print(chunk)
     
-    png_parser.extract_metadata(chunks)
+    #png_parser.extract_metadata(chunks)
 
     # fourier.display_fourier_spectrum(file_path)
     # fourier.test_fourier_transformation(file_path)
@@ -44,10 +44,10 @@ if __name__ == "__main__":
     for chunk in encrypted_chunks:
         print(chunk)
 
-    try:
-        png_parser.extract_metadata(encrypted_chunks)
-    except Exception as e:
-        print(f"Failed to read metadata: {e}")
+    # try:
+    #     png_parser.extract_metadata(encrypted_chunks)
+    # except Exception as e:
+    #     print(f"Failed to read metadata: {e}")
 
     ebc.decrypt_png_ebc(encrypted_path, decrypted_path, private_key)
 
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     for chunk in decrypted_chunks:
         print(chunk)
     
-    try:
-        png_parser.extract_metadata(decrypted_chunks)
-    except Exception as e:
-        print(f"Failed to read metadata: {e}")
+    # try:
+    #     png_parser.extract_metadata(decrypted_chunks)
+    # except Exception as e:
+    #     print(f"Failed to read metadata: {e}")

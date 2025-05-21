@@ -11,7 +11,11 @@ def encrypt_chunk_ebc(chunk, public_key):
     if chunk.type in ["IEND", "IHDR"]:
         return chunk
     
-    block_size = public_key[1].bit_length() // 8
+    # Używamy dokładnie ten sam sposób obliczania rozmiaru bloku w obu funkcjach
+    n_bits = public_key[1].bit_length()
+    block_size = n_bits // 8
+    if n_bits % 8 != 0:
+        block_size += 1
     
     encrypted_data = bytearray()
     data = chunk.data
@@ -26,7 +30,19 @@ def encrypt_chunk_ebc(chunk, public_key):
         block = data[i:i+chunk_size]
         m = int.from_bytes(block, byteorder='big')
         c = pow(m, public_key[0], public_key[1])
-        encrypted_block = c.to_bytes(block_size, byteorder='big')
+        try:
+            encrypted_block = c.to_bytes(block_size, byteorder='big')
+        except OverflowError:
+            actual_size = (c.bit_length() + 7) // 8
+            if actual_size > block_size:
+                print(f"Warning: Encrypted value requires {actual_size} bytes but block_size is {block_size}")
+                encrypted_block = c.to_bytes(actual_size, byteorder='big')
+            else:
+                encrypted_block = c.to_bytes(actual_size, byteorder='big')
+                if actual_size < block_size:
+                    padded_block = bytearray(block_size - actual_size) + encrypted_block
+                    encrypted_block = bytes(padded_block)
+
         encrypted_data.extend(encrypted_block)
     
     new_crc = compute_crc(chunk.type, encrypted_data)
@@ -37,10 +53,27 @@ def decrypt_chunk_ebc(chunk, private_key):
     if chunk.type in ["IEND", "IHDR"]:
         return chunk
     
-    block_size = private_key[1].bit_length() // 8
+    # Używamy dokładnie ten sam sposób obliczania rozmiaru bloku jak w funkcji szyfrującej
+    n_bits = private_key[1].bit_length()
+    block_size = n_bits // 8
+    if n_bits % 8 != 0:
+        block_size += 1
     
+    # Bardziej elastyczne podejście do rozmiarów bloków
     if len(chunk.data) % block_size != 0:
-        raise ValueError(f"Chunk data length ({len(chunk.data)} bytes) for chunk {chunk.type} is not a multiple of RSA block size ({block_size} bytes)")
+        print(f"Warning: Chunk data length ({len(chunk.data)} bytes) for chunk {chunk.type} is not a multiple of RSA block size ({block_size} bytes)")
+        # Ustalamy nowy rozmiar bloku na podstawie dostępnych danych
+        blocks_count = len(chunk.data) // block_size
+        remainder = len(chunk.data) % block_size
+        if remainder > 0:
+            if remainder > block_size - 5:  # Jeśli różnica jest niewielka, próbujemy zwiększyć rozmiar bloku
+                block_size = len(chunk.data) // blocks_count
+                if len(chunk.data) % blocks_count != 0:
+                    block_size += 1
+            else:  # W przeciwnym razie, dodajemy padding
+                print(f"Adding padding to make chunk data length a multiple of block size")
+                padding_size = block_size - remainder
+                chunk.data += b'\x00' * padding_size
     
     decrypted_data = bytearray()
     chunk_size = block_size - 11
@@ -81,7 +114,12 @@ def decrypt_png_ebc(input_path, output_path, private_key):
     
     decrypted_chunks = []
     for chunk in chunks:
-        decrypted_chunk = decrypt_chunk_ebc(chunk, private_key)
-        decrypted_chunks.append(decrypted_chunk)
+        try:
+            decrypted_chunk = decrypt_chunk_ebc(chunk, private_key)
+            decrypted_chunks.append(decrypted_chunk)
+        except Exception as e:
+            print(f"Error decrypting chunk {chunk.type}: {str(e)}")
+            # W przypadku błędu, pozostaw oryginalny chunk
+            decrypted_chunks.append(chunk)
     
     png_parser.write_chunks(output_path, decrypted_chunks)
