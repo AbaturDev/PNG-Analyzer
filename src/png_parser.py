@@ -6,6 +6,7 @@ import numpy as np
 from collections import Counter
 
 
+# PNG file signature (magic number)
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 def read_chunks(file_path):
@@ -76,6 +77,7 @@ def extract_metadata(chunks):
         idat_data = parse_IDAT(idat_data, width, height, bit_depth, color_type)
         print("IDAT metadata: " + str(idat_data))
 
+# Parses the IHDR chunk which contains basic image information
 def parse_IHDR(chunk):
     if(chunk.type != "IHDR"):
         raise ValueError("Chunk is not type of IHDR")
@@ -92,7 +94,8 @@ def parse_IHDR(chunk):
     }
 
     return ihdr_info
-    
+
+# Parses a tEXt chunk (keyword + plain text)
 def parse_tEXt(chunk):
     if(chunk.type != "tEXt"):
         raise ValueError("Chunk is not type of tEXt")
@@ -102,7 +105,8 @@ def parse_tEXt(chunk):
     text = chunk.data[null_pos+1:].decode('latin1')
 
     return {"keyword": keyword, "text": text}
-    
+
+# Parses an iTXt chunk (international text with optional compression and translation)
 def parse_iTXt(chunk):
     if(chunk.type != "iTXt"):
         raise ValueError("Chunk is not type of iTXt")
@@ -118,6 +122,7 @@ def parse_iTXt(chunk):
     translated_keyword = parts[4].decode('utf-8', errors='ignore')
     text = parts[5]
 
+    # Decompress if compression flag is set
     if compression_flag == b'\x01':
         text = zlib.decompress(text).decode('utf-8')
     else:
@@ -129,7 +134,8 @@ def parse_iTXt(chunk):
         "translated_keyword": translated_keyword,
         "text": text
     }
-    
+
+# Parses tIME chunk (last modification time)
 def parse_tIME(chunk):
     if(chunk.type != "tIME"):
         raise ValueError("Chunk is not type of tIME")
@@ -145,6 +151,7 @@ def parse_tIME(chunk):
         "second": second
     }
 
+# Parses EXIF metadata from eXIf chunk using piexif
 def parse_eXIf(chunk):
     if chunk.type != "eXIf":
         raise ValueError("Chunk is not type of eXIf")
@@ -165,6 +172,7 @@ def parse_eXIf(chunk):
         print(f"Error parsing EXIF: {e}")
         return None
 
+# Parses zTXt chunk (compressed text)
 def parse_zTXt(chunk):
     if(chunk.type != "zTXt"):
         raise ValueError("Chunk is not type of zTXt")
@@ -181,6 +189,7 @@ def parse_zTXt(chunk):
 
     return {"keyword": keyword, "text": text}
 
+# Parses pHYs chunk (physical pixel dimensions)
 def parse_pHYs(chunk):
     if(chunk.type != "pHYs"):
         raise ValueError("Chunk is not type of pHYs")
@@ -195,6 +204,7 @@ def parse_pHYs(chunk):
         "unit_sepecifier": unit
     }
 
+# Parses PLTE chunk (color palette)
 def parse_PLTE(chunk, color_type):
     if chunk.type != "PLTE":
         raise ValueError("Chunk is not type of PLTE")
@@ -218,6 +228,7 @@ def parse_PLTE(chunk, color_type):
         "colors": palette
     }
 
+# Paeth predictor algorithm used in PNG filter type 4
 def paeth_predictor(a, b, c):
     p = a + b - c
     pa = abs(p - a)
@@ -258,9 +269,11 @@ def undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel):
     return result
 
 def get_dominant_colors(arr, color_type, top_n=5):
+    # For palette images, count palette indices
     if color_type == 3:
         flat = arr.flatten()
         return {f"Palette index {k}": v for k, v in Counter(flat).most_common(top_n)}
+    # For RGB/RGBA, count RGB triples
     elif color_type in (2, 6):
         pixels = arr.reshape(-1, arr.shape[-1])[:, :3]
         pixels = [(int(p[0]), int(p[1]), int(p[2])) for p in pixels]
@@ -269,6 +282,7 @@ def get_dominant_colors(arr, color_type, top_n=5):
     return None
 
 def get_compression_info(idat_data):
+    # Compare compressed and decompressed sizes
     original_size = len(idat_data)
     decompressed = zlib.decompress(idat_data)
     ratio = original_size / len(decompressed)
@@ -279,6 +293,7 @@ def get_compression_info(idat_data):
     }
 
 def has_transparency(arr, color_type):
+    # Check if any alpha values are not 255 (fully opaque)
     if color_type not in (4, 6):
         return False
     alpha_channel = arr[..., -1] if color_type == 6 else arr[..., 1]
@@ -315,6 +330,7 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
     except zlib.error as e:
         raise ValueError(f"Decompression failed: {e}")
 
+    # Determine number of channels based on color type
     if color_type == 0:  # Grayscale
         channels = 1
     elif color_type == 2:  # RGB
@@ -328,6 +344,7 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
     else:
         raise ValueError(f"Unsupported color type: {color_type}")
 
+    # Calculate number of bytes per scanline (excluding filter byte)
     bits_per_scanline = width * channels * bit_depth
     bytes_per_scanline = (bits_per_scanline + 7) // 8
 
@@ -335,6 +352,7 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
     prev_scanline = None
     offset = 0
     
+    # Iterate over all scanlines
     for _ in range(height):
         if offset + 1 + bytes_per_scanline > len(decompressed):
             raise ValueError("Unexpected end of IDAT data")
@@ -345,21 +363,25 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
         scanline = decompressed[offset:offset + bytes_per_scanline]
         offset += bytes_per_scanline
 
+        # Reconstruct unfiltered scanline
         unfiltered = undo_filter(filter_type, scanline, prev_scanline, (channels * bit_depth + 7) // 8)
         pixels.append(unfiltered)
         prev_scanline = unfiltered
 
+    # Merge all scanlines into single byte buffer
     pixel_data = b''.join(pixels)
 
+    # Determine correct NumPy dtype
     if bit_depth == 8:
         dtype = np.uint8
     elif bit_depth == 16:
-        dtype = '>u2'
+        dtype = '>u2'       # Big-endian 16-bit unsigned
     else:
         raise ValueError(f"Unsupported bit depth: {bit_depth}")
 
     arr = np.frombuffer(pixel_data, dtype=dtype)
 
+    # Reshape array to (height, width, channels) or (height, width)
     if color_type in (2, 6):  # RGB/RGBA
         arr = arr.reshape((height, width, channels))
     elif color_type in (0, 3, 4):  # Grayscale/Indexed/Grayscale+Alpha
@@ -368,6 +390,7 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
         else:
             arr = arr.reshape((height, width))
 
+    # Extract image metadata
     metadata = {
         "stats": get_image_stats(arr, color_type),
         "dominant_colors": get_dominant_colors(arr, color_type),
