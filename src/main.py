@@ -6,6 +6,7 @@ from png_anonymizator import anonymize_png
 from rsa import generate_keypair
 import modes_ebc as ebc
 import modes_cbc as cbc
+import rsa_lib
 
 def fourier_utils(file_path):
     fourier.display_fourier_spectrum(file_path)
@@ -78,6 +79,33 @@ def cbc_utils(filename, file_path, public_key, private_key):
         print(f"Failed to read metadata: {e}")
 
 
+def rsa_lib_utils(filename, file_path, public_key, private_key):
+    encrypted_path = os.path.join("assets", f"{filename}_rsa_lib_encrypted.png")
+    decrypted_path = os.path.join("assets", f"{filename}_rsa_lib_decrypted.png")
+
+    rsa_lib.encrypt_png_rsa_lib(file_path, encrypted_path, public_key)
+
+    encrypted_chunks = png_parser.read_chunks(encrypted_path)
+    for chunk in encrypted_chunks:
+        print(chunk)
+
+    try:
+        png_parser.extract_metadata(encrypted_chunks)
+    except Exception as e:
+        print(f"Failed to read metadata: {e}")
+
+    rsa_lib.decrypt_png_rsa_lib(encrypted_path, decrypted_path, private_key)
+
+    decrypted_chunks = png_parser.read_chunks(decrypted_path)
+    for chunk in decrypted_chunks:
+        print(chunk)
+
+    try:
+        png_parser.extract_metadata(decrypted_chunks)
+    except Exception as e:
+        print(f"Failed to read metadata: {e}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 1:
         print("Filename argument is missing")
@@ -101,3 +129,5 @@ if __name__ == "__main__":
     ebc_utils(filename, file_path, public_key, private_key)
 
     cbc_utils(filename, file_path, public_key, private_key)
+
+    rsa_lib_utils(filename, file_path, public_key, private_key)

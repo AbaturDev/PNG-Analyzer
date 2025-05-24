@@ -76,6 +76,7 @@ def decrypt_chunk_cbc(chunk: PngChunk, private_key, iv: bytes) -> PngChunk:
     new_crc = compute_crc(chunk.type, decrypted_data)
     return PngChunk(length=len(decrypted_data), chunk_type=chunk.type, data=decrypted_data, crc=new_crc)
 
+
 def encrypt_png_cbc(input_path: str, output_path: str, public_key) -> None:
     chunks = png_parser.read_chunks(input_path)
 

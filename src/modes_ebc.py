@@ -119,7 +119,7 @@ def encrypt_png_ebc(input_path, output_path, public_key):
         encrypted_chunks.append(encrypted_chunk)
     
     png_parser.write_chunks(output_path, encrypted_chunks)
-    print(f"Encrypted successfully - {output_path}")
+    print(f"Encrypted with EBC successfully - {output_path}")
 
 def decrypt_png_ebc(input_path, output_path, private_key):
     chunks = png_parser.read_chunks(input_path)
@@ -135,4 +135,4 @@ def decrypt_png_ebc(input_path, output_path, private_key):
             decrypted_chunks.append(chunk)
     
     png_parser.write_chunks(output_path, decrypted_chunks)
-    print(f"Decrypted successfully - {output_path}")
+    print(f"Decrypted with EBC successfully - {output_path}")
