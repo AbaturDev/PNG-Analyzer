@@ -2,14 +2,14 @@ import random
 from sympy import isprime
 
 # Computes the greatest common divisor (GCD) of two integers using Euclidean algorithm
-def gcd(a: int, b: int) -> int:
+def gcd(a, b):
     while b != 0:
         a, b = b, a % b
     return a
 
 # Computes modular inverse using Extended Euclidean Algorithm
 # Finds x such that (a * x) % m == 1
-def modinv(a: int, m: int) -> int:
+def modinv(a, m):
     m0, x0, x1 = m, 0, 1
     while a > 1:
         q = a // m
@@ -18,7 +18,7 @@ def modinv(a: int, m: int) -> int:
     return x1 % m0
 
 # Generates a random prime number with specified bit length
-def generate_prime(bits: int) -> int:
+def generate_prime(bits):
     while True:
         # Generate random odd number with MSB and LSB set to 1
         p = random.getrandbits(bits)
@@ -27,7 +27,7 @@ def generate_prime(bits: int) -> int:
             return p
 
 # Generates RSA public and private key pair
-def generate_keypair(bits: int = 512):
+def generate_keypair(bits = 512):
     # Generate two distinct large primes p and q
     p = generate_prime(bits)
     q = generate_prime(bits)

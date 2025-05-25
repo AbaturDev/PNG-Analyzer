@@ -35,19 +35,8 @@ def encrypt_chunk_ebc(chunk, public_key):
         block = data[i:i+chunk_size]
         m = int.from_bytes(block, byteorder='big')
         c = pow(m, public_key[0], public_key[1])
-        try:
-            encrypted_block = c.to_bytes(block_size, byteorder='big')
-        except OverflowError:
-            # Handle rare cases when encrypted result is bigger than expected
-            actual_size = (c.bit_length() + 7) // 8
-            if actual_size > block_size:
-                print(f"Warning: Encrypted value requires {actual_size} bytes but block_size is {block_size}")
-                encrypted_block = c.to_bytes(actual_size, byteorder='big')
-            else:
-                encrypted_block = c.to_bytes(actual_size, byteorder='big')
-                if actual_size < block_size:
-                    padded_block = bytearray(block_size - actual_size) + encrypted_block
-                    encrypted_block = bytes(padded_block)
+
+        encrypted_block = c.to_bytes(block_size, byteorder='big')
 
         encrypted_data.extend(encrypted_block)
     
@@ -64,25 +53,7 @@ def decrypt_chunk_ebc(chunk, private_key):
     block_size = n_bits // 8
     if n_bits % 8 != 0:
         block_size += 1
-    
-    # Check for corrupted or non-aligned encrypted data
-    if len(chunk.data) % block_size != 0:
-        print(f"Warning: Chunk data length ({len(chunk.data)} bytes) for chunk {chunk.type} is not a multiple of RSA block size ({block_size} bytes)")
-        
-        blocks_count = len(chunk.data) // block_size
-        remainder = len(chunk.data) % block_size
-        if remainder > 0:
-            if remainder > block_size - 5:
-                # Reduce block size to handle misalignment
-                block_size = len(chunk.data) // blocks_count
-                if len(chunk.data) % blocks_count != 0:
-                    block_size += 1
-            else:
-                # Pad if just a small remainder is missing
-                print(f"Adding padding to make chunk data length a multiple of block size")
-                padding_size = block_size - remainder
-                chunk.data += b'\x00' * padding_size
-    
+   
     decrypted_data = bytearray()
     chunk_size = block_size - 11
     
@@ -91,14 +62,8 @@ def decrypt_chunk_ebc(chunk, private_key):
         block = chunk.data[i:i+block_size]
         c = int.from_bytes(block, byteorder='big')
         m = pow(c, private_key[0], private_key[1])
-        try:
-            decrypted_block = m.to_bytes(chunk_size, byteorder='big')
-        except OverflowError:
-            # Handle small decrypted integers
-            actual_size = (m.bit_length() + 7) // 8
-            decrypted_block = m.to_bytes(actual_size, byteorder='big')
-            if actual_size < chunk_size:
-                decrypted_block = b'\x00' * (chunk_size - actual_size) + decrypted_block
+
+        decrypted_block = m.to_bytes(chunk_size, byteorder='big')
                 
         decrypted_data.extend(decrypted_block)
     
@@ -126,13 +91,8 @@ def decrypt_png_ebc(input_path, output_path, private_key):
     
     decrypted_chunks = []
     for chunk in chunks:
-        try:
-            decrypted_chunk = decrypt_chunk_ebc(chunk, private_key)
-            decrypted_chunks.append(decrypted_chunk)
-        except Exception as e:
-            print(f"Error decrypting chunk {chunk.type}: {str(e)}")
-            # On failure, keep the original chunk
-            decrypted_chunks.append(chunk)
+        decrypted_chunk = decrypt_chunk_ebc(chunk, private_key)
+        decrypted_chunks.append(decrypted_chunk)
     
     png_parser.write_chunks(output_path, decrypted_chunks)
     print(f"Decrypted with EBC successfully - {output_path}")

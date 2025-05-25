@@ -56,12 +56,3 @@ def test_fourier_transformation(image_path):
     axs[2].axis('off')
 
     plt.show()
-
-    # Calculate Mean Squared Error (MSE) between original and recovered image
-    mse = np.mean(difference**2)
-    print(f"MSE: {mse:.10f}")
-
-    if mse < 1e-5:
-        print("Transformation works correctly")
-    else:
-        print("There is a problem with transformation")
