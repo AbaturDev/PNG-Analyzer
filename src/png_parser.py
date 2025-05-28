@@ -68,14 +68,7 @@ def extract_metadata(chunks):
         elif chunk.type == "PLTE":
             color_type = ihdr_data["color_type"]
             print("PLTE metadata: " + str(parse_PLTE(chunk, color_type)))
-    
-    if idat_data and ihdr_data:
-        width = ihdr_data["width"]
-        height = ihdr_data["height"]
-        bit_depth = ihdr_data["bit_depth"]
-        color_type = ihdr_data["color_type"]
-        idat_data = parse_IDAT(idat_data, width, height, bit_depth, color_type)
-        print("IDAT metadata: " + str(idat_data))
+
 
 # Parses the IHDR chunk which contains basic image information
 def parse_IHDR(chunk):
@@ -331,18 +324,7 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
         raise ValueError(f"Decompression failed: {e}")
 
     # Determine number of channels based on color type
-    if color_type == 0:  # Grayscale
-        channels = 1
-    elif color_type == 2:  # RGB
-        channels = 3
-    elif color_type == 3:  # Indexed
-        channels = 1
-    elif color_type == 4:  # Grayscale + Alpha
-        channels = 2
-    elif color_type == 6:  # RGBA
-        channels = 4
-    else:
-        raise ValueError(f"Unsupported color type: {color_type}")
+    channels = get_channels_from_color_type(color_type)
 
     # Calculate number of bytes per scanline (excluding filter byte)
     bits_per_scanline = width * channels * bit_depth
@@ -410,3 +392,67 @@ def write_chunks(filename, chunks):
             f.write(chunk.type.encode("ascii"))
             f.write(chunk.data)
             f.write(chunk.crc.to_bytes(4, "big"))
+
+def get_channels_from_color_type(color_type):
+    if color_type == 0:  # Grayscale
+        channels = 1
+    elif color_type == 2:  # RGB
+        channels = 3
+    elif color_type == 3:  # Indexed
+        channels = 1
+    elif color_type == 4:  # Grayscale + Alpha
+        channels = 2
+    elif color_type == 6:  # RGBA
+        channels = 4
+    else:
+        raise ValueError(f"Unsupported color type: {color_type}")
+
+    return channels
+
+def remove_png_filters(data, image_info):
+    channels = get_channels_from_color_type(image_info['color_type'])
+
+    bits_per_scanline = image_info['width'] * channels * image_info['bit_depth']
+    bytes_per_scanline = (bits_per_scanline + 7) // 8
+
+    pixels = []
+    prev_scanline = None
+    offset = 0
+    
+    # Iterate over all scanlines
+    for _ in range(image_info['height']):
+        if offset + 1 + bytes_per_scanline > len(data):
+            raise ValueError("Unexpected end of IDAT data")
+
+        filter_type = data[offset]
+        offset += 1
+        
+        scanline = data[offset:offset + bytes_per_scanline]
+        offset += bytes_per_scanline
+
+        # Reconstruct unfiltered scanline
+        unfiltered = undo_filter(filter_type, scanline, prev_scanline, (channels * image_info['bit_depth'] + 7) // 8)
+        pixels.append(unfiltered)
+        prev_scanline = unfiltered
+
+    # Merge all scanlines into single byte buffer
+    pixel_data = b''.join(pixels)
+
+    return pixel_data
+
+def apply_png_filters(pixel_data, image_info):
+    channels = get_channels_from_color_type(image_info['color_type'])
+    bits_per_scanline = image_info['width'] * channels * image_info['bit_depth']
+    bytes_per_scanline = (bits_per_scanline + 7) // 8
+    
+    filtered_data = bytearray()
+    
+    for y in range(image_info['height']):
+        start = y * bytes_per_scanline
+        end = start + bytes_per_scanline
+        scanline = pixel_data[start:end]
+        
+        filtered_data.append(0)
+        filtered_data.extend(scanline)
+    
+    return bytes(filtered_data)
