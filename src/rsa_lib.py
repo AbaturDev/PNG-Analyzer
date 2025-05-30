@@ -13,8 +13,9 @@ def compute_crc(chunk_type, data):
 
 # Encrypt a single PNG chunk using RSA PKCS#1 v1.5 encryption
 def encrypt_chunk_rsa_lib(chunk: PngChunk, public_key) -> PngChunk:
-    if chunk.type in ['IHDR', 'IEND']:
-        return chunk  # Skip header and end
+    # Encrypt only IDAT chunks
+    if chunk.type != 'IDAT':
+        return chunk
 
     e, n = public_key
     rsa_key = RSA.construct((n, e))  # Construct RSA-key from public key
@@ -36,8 +37,9 @@ def encrypt_chunk_rsa_lib(chunk: PngChunk, public_key) -> PngChunk:
 
 # Decrypts a single PNG chunk using the RSA PKCS#1 v1.5 decryption mode
 def decrypt_chunk_rsa_lib(chunk: PngChunk, private_key) -> PngChunk:
-    if chunk.type in ['IHDR', 'IEND']:
-        return chunk  # Skip header and end
+    # Decrypt only IDAT  chunks
+    if chunk.type != 'IDAT':
+        return chunk
 
     d, n = private_key
     e = 65537  # Exponent used in rsa.py

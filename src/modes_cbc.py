@@ -18,8 +18,9 @@ def xor_bytes(a, b):
 
 # Encrypts a single PNG chunk
 def encrypt_chunk_cbc(chunk: PngChunk, public_key, iv: bytes) -> PngChunk:
-    if chunk.type in ['IHDR', 'IEND']:
-        return chunk  # Skip header and end
+    # Encrypt only IDAT chunks
+    if chunk.type != 'IDAT':
+        return chunk
 
     # Determine block size from RSA modulus
     n_bits = public_key[1].bit_length()
@@ -53,8 +54,9 @@ def encrypt_chunk_cbc(chunk: PngChunk, public_key, iv: bytes) -> PngChunk:
 
 # Decrypts a single PNG chunk
 def decrypt_chunk_cbc(chunk: PngChunk, private_key, iv: bytes) -> PngChunk:
-    if chunk.type in ['IHDR', 'IEND']:
-        return chunk  # Skip header and end
+    # Decrypt only IDAT chunks
+    if chunk.type != 'IDAT':
+        return chunk
 
     n_bits = private_key[1].bit_length()
     block_size = n_bits // 8
@@ -80,10 +82,6 @@ def decrypt_chunk_cbc(chunk: PngChunk, private_key, iv: bytes) -> PngChunk:
         decrypted_block = xor_bytes(decrypted_block, prev_block[:chunk_size])  # XOR with a previous block
         decrypted_data.extend(decrypted_block)
         prev_block = block  # Update the previous block for next iteration
-
-    # Remove padding from non-IDAT chunks
-    if chunk.type != 'IDAT':
-        decrypted_data = decrypted_data.rstrip(b'\x00')
 
     new_crc = compute_crc(chunk.type, decrypted_data)
     return PngChunk(length=len(decrypted_data), chunk_type=chunk.type, data=decrypted_data, crc=new_crc)
