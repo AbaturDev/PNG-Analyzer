@@ -68,14 +68,7 @@ def extract_metadata(chunks):
         elif chunk.type == "PLTE":
             color_type = ihdr_data["color_type"]
             print("PLTE metadata: " + str(parse_PLTE(chunk, color_type)))
-    
-    if idat_data and ihdr_data:
-        width = ihdr_data["width"]
-        height = ihdr_data["height"]
-        bit_depth = ihdr_data["bit_depth"]
-        color_type = ihdr_data["color_type"]
-        idat_data = parse_IDAT(idat_data, width, height, bit_depth, color_type)
-        print("IDAT metadata: " + str(idat_data))
+
 
 # Parses the IHDR chunk which contains basic image information
 def parse_IHDR(chunk):
@@ -228,46 +221,6 @@ def parse_PLTE(chunk, color_type):
         "colors": palette
     }
 
-# Paeth predictor algorithm used in PNG filter type 4
-def paeth_predictor(a, b, c):
-    p = a + b - c
-    pa = abs(p - a)
-    pb = abs(p - b)
-    pc = abs(p - c)
-    if pa <= pb and pa <= pc:
-        return a
-    elif pb <= pc:
-        return b
-    else:
-        return c
-
-def undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel):
-    result = bytearray(len(scanline))
-    if filter_type == 0:  # None
-        return scanline
-    elif filter_type == 1:  # Sub
-        for i in range(len(scanline)):
-            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
-            result[i] = (scanline[i] + left) & 0xFF
-    elif filter_type == 2:  # Up
-        for i in range(len(scanline)):
-            up = prev_scanline[i] if prev_scanline else 0
-            result[i] = (scanline[i] + up) & 0xFF
-    elif filter_type == 3:  # Average
-        for i in range(len(scanline)):
-            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
-            up = prev_scanline[i] if prev_scanline else 0
-            result[i] = (scanline[i] + ((left + up) // 2)) & 0xFF
-    elif filter_type == 4:  # Paeth
-        for i in range(len(scanline)):
-            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
-            up = prev_scanline[i] if prev_scanline else 0
-            up_left = prev_scanline[i - bytes_per_pixel] if (prev_scanline and i >= bytes_per_pixel) else 0
-            result[i] = (scanline[i] + paeth_predictor(left, up, up_left)) & 0xFF
-    else:
-        raise ValueError(f"Unknown filter type {filter_type}")
-    return result
-
 def get_dominant_colors(arr, color_type, top_n=5):
     # For palette images, count palette indices
     if color_type == 3:
@@ -331,18 +284,7 @@ def parse_IDAT(idat_data, width, height, bit_depth, color_type):
         raise ValueError(f"Decompression failed: {e}")
 
     # Determine number of channels based on color type
-    if color_type == 0:  # Grayscale
-        channels = 1
-    elif color_type == 2:  # RGB
-        channels = 3
-    elif color_type == 3:  # Indexed
-        channels = 1
-    elif color_type == 4:  # Grayscale + Alpha
-        channels = 2
-    elif color_type == 6:  # RGBA
-        channels = 4
-    else:
-        raise ValueError(f"Unsupported color type: {color_type}")
+    channels = get_channels_from_color_type(color_type)
 
     # Calculate number of bytes per scanline (excluding filter byte)
     bits_per_scanline = width * channels * bit_depth
@@ -410,3 +352,152 @@ def write_chunks(filename, chunks):
             f.write(chunk.type.encode("ascii"))
             f.write(chunk.data)
             f.write(chunk.crc.to_bytes(4, "big"))
+
+def get_channels_from_color_type(color_type):
+    if color_type == 0:  # Grayscale
+        channels = 1
+    elif color_type == 2:  # RGB
+        channels = 3
+    elif color_type == 3:  # Indexed
+        channels = 1
+    elif color_type == 4:  # Grayscale + Alpha
+        channels = 2
+    elif color_type == 6:  # RGBA
+        channels = 4
+    else:
+        raise ValueError(f"Unsupported color type: {color_type}")
+
+    return channels
+
+# Paeth predictor algorithm used in PNG filter type 4
+def paeth_predictor(a, b, c):
+    p = a + b - c
+    pa = abs(p - a)
+    pb = abs(p - b)
+    pc = abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    elif pb <= pc:
+        return b
+    else:
+        return c
+
+def undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel):
+    result = bytearray(len(scanline))
+    if filter_type == 0:  # None
+        return scanline
+    elif filter_type == 1:  # Sub
+        for i in range(len(scanline)):
+            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            result[i] = (scanline[i] + left) & 0xFF
+    elif filter_type == 2:  # Up
+        for i in range(len(scanline)):
+            up = prev_scanline[i] if prev_scanline else 0
+            result[i] = (scanline[i] + up) & 0xFF
+    elif filter_type == 3:  # Average
+        for i in range(len(scanline)):
+            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            up = prev_scanline[i] if prev_scanline else 0
+            result[i] = (scanline[i] + ((left + up) // 2)) & 0xFF
+    elif filter_type == 4:  # Paeth
+        for i in range(len(scanline)):
+            left = result[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            up = prev_scanline[i] if prev_scanline else 0
+            up_left = prev_scanline[i - bytes_per_pixel] if (prev_scanline and i >= bytes_per_pixel) else 0
+            result[i] = (scanline[i] + paeth_predictor(left, up, up_left)) & 0xFF
+    else:
+        raise ValueError(f"Unknown filter type {filter_type}")
+    return result
+
+def apply_filter(filter_type, scanline, prev_scanline, bytes_per_pixel):
+    result = bytearray(len(scanline))
+    
+    if filter_type == 0:  # None
+        return scanline
+    elif filter_type == 1:  # Sub
+        for i in range(len(scanline)):
+            left = scanline[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            result[i] = (scanline[i] - left) & 0xFF
+    elif filter_type == 2:  # Up
+        for i in range(len(scanline)):
+            up = prev_scanline[i] if prev_scanline else 0
+            result[i] = (scanline[i] - up) & 0xFF
+    elif filter_type == 3:  # Average
+        for i in range(len(scanline)):
+            left = scanline[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            up = prev_scanline[i] if prev_scanline else 0
+            average = (left + up) // 2
+            result[i] = (scanline[i] - average) & 0xFF
+    elif filter_type == 4:  # Paeth
+        for i in range(len(scanline)):
+            left = scanline[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+            up = prev_scanline[i] if prev_scanline else 0
+            up_left = prev_scanline[i - bytes_per_pixel] if (prev_scanline and i >= bytes_per_pixel) else 0
+            paeth = paeth_predictor(left, up, up_left)
+            result[i] = (scanline[i] - paeth) & 0xFF
+    else:
+        raise ValueError(f"Unknown filter type {filter_type}")
+
+    return result
+
+def get_bytes_per_scanline(width, color_type, bit_depth):
+    channels = get_channels_from_color_type(color_type)
+    return (width * channels * bit_depth + 7) // 8
+
+def get_bytes_per_pixel(color_type, bit_depth):
+    channels = get_channels_from_color_type(color_type)
+    return (channels * bit_depth + 7) // 8
+
+def apply_png_filters(pixel_data, image_info, filter_type=0):
+    width = image_info['width']
+    height = image_info['height']
+    color_type = image_info['color_type']
+    bit_depth = image_info['bit_depth']
+
+    bytes_per_pixel = get_bytes_per_pixel(color_type, bit_depth)
+    bytes_per_scanline = get_bytes_per_scanline(width, color_type, bit_depth)
+
+    filtered_data = bytearray()
+    prev_scanline = None
+
+    for y in range(height):
+        start = y * bytes_per_scanline
+        end = start + bytes_per_scanline
+        scanline = pixel_data[start:end]
+
+        filtered_scanline = apply_filter(filter_type, scanline, prev_scanline, bytes_per_pixel)
+
+        filtered_data.append(filter_type)
+        filtered_data.extend(filtered_scanline)
+        prev_scanline = scanline
+
+    return bytes(filtered_data)
+
+def remove_png_filters(data, image_info):
+    width = image_info['width']
+    height = image_info['height']
+    color_type = image_info['color_type']
+    bit_depth = image_info['bit_depth']
+
+    bytes_per_pixel = get_bytes_per_pixel(color_type, bit_depth)
+    bytes_per_scanline = get_bytes_per_scanline(width, color_type, bit_depth)
+
+    pixels = []
+    prev_scanline = None
+    offset = 0
+
+    for _ in range(height):
+        if offset + 1 + bytes_per_scanline > len(data):
+            raise ValueError("Unexpected end of IDAT data")
+
+        filter_type = data[offset]
+        offset += 1
+
+        scanline = data[offset:offset + bytes_per_scanline]
+        offset += bytes_per_scanline
+
+        unfiltered = undo_filter(filter_type, scanline, prev_scanline, bytes_per_pixel)
+        pixels.append(unfiltered)
+        prev_scanline = unfiltered
+
+    return b''.join(pixels)
