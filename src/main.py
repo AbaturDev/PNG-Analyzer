@@ -86,14 +86,14 @@ if __name__ == "__main__":
     for chunk in chunks:
         print(chunk)
     
-    #png_parser.extract_metadata(chunks)
+    png_parser.extract_metadata(chunks)
 
-    #fourier_utils(file_path)
+    fourier_utils(file_path)
 
-    #anonymization_utils(filename, file_path)
+    anonymization_utils(filename, file_path)
 
     ecb_utils(filename, file_path, public_key, private_key)
 
-    #cbc_utils(filename, file_path, public_key, private_key)
+    cbc_utils(filename, file_path, public_key, private_key)
 
-    #rsa_lib_utils(filename, file_path, public_key, private_key)
+    rsa_lib_utils(filename, file_path, public_key, private_key)
