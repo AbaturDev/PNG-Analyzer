@@ -82,15 +82,15 @@ if __name__ == "__main__":
 
     public_key, private_key = generate_keypair(bits=1024)
 
-    chunks = png_parser.read_chunks(file_path)
-    for chunk in chunks:
-        print(chunk)
+    #chunks = png_parser.read_chunks(file_path)
+    #for chunk in chunks:
+        #print(chunk)
     
-    png_parser.extract_metadata(chunks)
+    #png_parser.extract_metadata(chunks)
 
-    fourier_utils(file_path)
+    #fourier_utils(file_path)
 
-    anonymization_utils(filename, file_path)
+    #anonymization_utils(filename, file_path)
 
     ecb_utils(filename, file_path, public_key, private_key)
 
